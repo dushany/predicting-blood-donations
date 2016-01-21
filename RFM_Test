@@ -1,0 +1,62 @@
+# load required packages
+library(caret)
+library(pROC)
+library(e1071)
+
+blood <- read.csv(file.choose())
+names(blood) <- c("Donor","Recency","Frequency","Monetary","Times","Donated")
+a <- quantile(df[,2], probs = seq(0,1,by=P))
+b <- quantile(df[,3], probs = seq(0,1,by=P))
+c <- quantile(df[,4], probs = seq(0,1,by=P))
+d <- quantile(df[,5], probs = seq(0,1,by=P))
+quants <- rbind(a, b, c, d)
+
+
+#rfm scoring code. need to update.
+p <- 1/score
+q <- quantile(df$col,probs=seq(0,1,by=p))
+
+
+
+#bar plot of donations by RFM Score to visualize the counts of 1 and 0 in each RFM group
+counts <- table(blood$donated, blood$group)
+barplot(counts,main="Donated in March by RFM Score",xlab="RFM Score",col=c("green","red"),legend=rownames(counts),beside=T)
+
+# create column showing whether they gave blood in March as yes and no
+# flag it is as a factor
+blood$donated2 <- ifelse(blood$donated==1,'yes','no')
+blood$donated2 <- as.factor(blood$donated2)
+outcomeName <- 'donated2'
+
+# split test data into portion for training model and for validating the model
+set.seed(700)
+trainInd <- createDataPartition(blood[,outcomeName],p=.7,list=F,times=1)
+blood.train <- blood[trainInd,]
+blood.test <- blood[-trainInd,]
+
+# Set variables for training and creating model. below is the 'generalized boosted regression model' method. 
+objControl <- trainControl(method='cv',number=3,returnResamp='none',summaryFunction=twoClassSummary,classProbs=TRUE)
+blood.fit <- train(blood.train[,1:5],blood.train[,outcomeName],method="gbm",trControl=objControl,metric="ROC",preProc = c("center","scale"))
+
+#Also tried knn and neural network methods.
+blood.fit <- train(blood.train[,1:5],blood.train[,outcomeName],method="knn",preProc = c("center","scale"),tuneLength=10,trControl=trainControl(method="cv"))
+blood.fit <- train(blood.train[,1:5],blood.train[,outcomeName],method="nnet",preProc = "range",tuneLength=10,trace=F,maxit=1000)
+
+# review results
+summary(blood.fit)
+print(blood.fit)
+
+# test the trained model against validation data and review results
+predictions <- predict(object=blood.fit,blood.test[,1:5],type="raw")
+head(predictions)
+print(postResample(pred=predictions,obs=as.factor(blood.test[,outcomeName])))
+predictions <- predict(object=blood.fit,blood.test[,1:5],type="prob")
+head(predictions)
+
+# review area under curve
+auc <- roc(ifelse(blood.test[,outcomeName]=="yes",1,0),predictions[[2]])
+auc$auc
+
+# plot importance of variables in model
+var <- varImp(blood.fit)
+plot(var)
